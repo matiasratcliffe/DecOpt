@@ -2,8 +2,9 @@
 pragma solidity ^0.8.9;
 
 // Uncomment this line to use console.log
- import "hardhat/console.sol";
+import "hardhat/console.sol";
 
+import "./Dates.sol" ;
  //SON LOTES DE 10 ACCIONES
 
 
@@ -14,6 +15,24 @@ pragma solidity ^0.8.9;
  
 
 contract Merval {
+    function removeByIndex(uint[] storage array, uint index) internal {
+        if (index >= array.length) return;
+
+        for (uint i = index; i < array.length-1; i++){
+            array[i] = array[i+1];
+        }
+        array.pop();
+    }
+    BokkyPooBahsDateTimeLibraryEdited DatesLibrary= new BokkyPooBahsDateTimeLibraryEdited();
+
+    uint timestamp;
+    function timeStampManager() public returns (uint)  {
+        uint _timestamp=block.timestamp;
+        if(_timestamp>timestamp+2592000){
+            timestamp=_timestamp+2592000;
+        }
+        return timestamp;
+    }
 
 
     struct Option {
@@ -75,7 +94,7 @@ contract Merval {
         //
         uint expiration=timeStampManager();
         
-        string memory ticker="GGALC271023";
+        string memory ticker=DatesLibrary.OptionFormat("MERV",expiration,true);
 
         Option memory newOption = Option(ticker,options.length,msg.sender, msg.sender, _strikePrice, expiration, _price, msg.value, _isCall, true, false);
 
@@ -97,6 +116,7 @@ contract Merval {
 
 
         payable(writer).transfer(msg.value);
+        removeByIndex(users[writer].ownedOptions, _optionID);
 
         options[_optionID].owner = msg.sender;
         options[_optionID].isInTheMarket = false;
@@ -114,6 +134,12 @@ contract Merval {
             }
 
 
+    function cancelOption(uint256 _optionID) public{
+        require(options[_optionID].writer == msg.sender, "You are not the writer of this option");
+        require(options[_optionID].isInTheMarket == true, "This option is not in the market");
+        require(options[_optionID].isExercised == false, "This option is already exercised");
+        options[_optionID].isInTheMarket = false;
+    }
 
     function exerciseOption(uint _optionID) public {
         ensureUserExists(msg.sender);
@@ -121,6 +147,8 @@ contract Merval {
         require(options[_optionID].isExercised == false, "This option is already exercised");
         require(block.timestamp <= options[_optionID].expiration, "This option is  expired ");
         options[_optionID].isExercised = true;
+        removeByIndex(users[msg.sender].ownedOptions, _optionID);
+        removeByIndex(users[options[_optionID].writer].Writtenoptions, _optionID);
 
         if (options[_optionID].isCall == true) {
             address Writer = options[_optionID].writer;
