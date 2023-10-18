@@ -3,7 +3,7 @@ pragma solidity ^0.8.9;
 
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
-
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./Dates.sol" ;
  //SON LOTES DE 10 ACCIONES
 
@@ -15,6 +15,7 @@ import "./Dates.sol" ;
  
 
 contract Merval {
+    IERC20 public usdtToken;
     function removeByIndex(uint[] storage array, uint index) internal {
         if (index >= array.length) return;
 
@@ -60,8 +61,9 @@ contract Merval {
     uint256 public userCount;
   
     Option[] public options;
-    uint public mervalIndex=783;
+    uint public mervalIndex=783; //Se remplaza por CHAINLINK
     
+    uint usdtvalue = 10**18;
 
     event OptionCreated(
         address indexed Lanzador,
@@ -72,7 +74,7 @@ contract Merval {
         bool isCall
     );
 
-        function createUser(address _address)public {
+        function createUser(address _address)p ublic {
         User memory newUser = User(userCount, _address, new uint[](0), new uint[](0));
         users[_address] = newUser;
         userCount+=userCount;
@@ -87,35 +89,40 @@ contract Merval {
         return( users[_userID]);
 
         }
-        function createOption(uint _strikePrice, uint _price, bool _isCall) public payable {
+        function createOption(uint _strikePrice, uint _price, bool _isCall) public  {
         ensureUserExists(msg.sender);
+        uint collateral=((mervalIndex * 30)/2)*usdtvalue;
 
-        require(msg.value >= (mervalIndex * 30)/2, "You must collateralize 150% of the price");
-        //
+        require(usdtToken.balanceOf(msg.sender) >= collateral, "Insufficient USDT balance,You must collateralize 150%");
+        require(usdtToken.allowance(msg.sender, address(this)) >= collateral, "Approval not given,You must collateralize 150% ");
+        usdtToken.transferFrom(msg.sender, owner, priceInUSDT);
+
         uint expiration=timeStampManager();
         
         string memory ticker=DatesLibrary.OptionFormat("MERV",expiration,true);
 
-        Option memory newOption = Option(ticker,options.length,msg.sender, msg.sender, _strikePrice, expiration, _price, msg.value, _isCall, true, false);
+        Option memory newOption = Option(ticker,options.length,msg.sender, msg.sender, _strikePrice, expiration, _price, collateral, _isCall, true, false);
 
 
         users[msg.sender].Writtenoptions.push(options.length);
         users[msg.sender].ownedOptions.push(options.length);
         options.push(newOption);
 
-        emit OptionCreated(msg.sender, _strikePrice, expiration, _price, msg.value, _isCall);
+        emit OptionCreated(msg.sender, _strikePrice, expiration, _price, collateral, _isCall);
+        //SEND TO COMPUND
     }
     function buyOption(uint _optionID) public payable {
         ensureUserExists(msg.sender);
-
-        require(msg.value >= options[_optionID].price*10, "You must pay the price of the option");
+        uint batchPrice=usdtvalue*options[_optionID].price*10;
+        require(usdtToken.balanceOf(msg.sender) >= batchPrice, "Insufficient USDT balance");
+        require(usdtToken.allowance(msg.sender, address(this)) >= batchPrice, "Approval not given");
         require(options[_optionID].isInTheMarket == true, "This option is not in the market");
         require(options[_optionID].isExercised == false, "This option is already exercised");
         require(options[_optionID].writer != msg.sender, "You are the writer of this option");
         address writer = options[_optionID].writer;
 
 
-        payable(writer).transfer(msg.value);
+        usdtToken.transferFrom(msg.sender, writer, batchPrice);
         removeByIndex(users[writer].ownedOptions, _optionID);
 
         options[_optionID].owner = msg.sender;
@@ -134,7 +141,7 @@ contract Merval {
             }
 
 
-    function cancelOption(uint256 _optionID) public{
+    function canceSellOrder(uint256 _optionID) public{
         require(options[_optionID].writer == msg.sender, "You are not the writer of this option");
         require(options[_optionID].isInTheMarket == true, "This option is not in the market");
         require(options[_optionID].isExercised == false, "This option is already exercised");
@@ -154,10 +161,14 @@ contract Merval {
             address Writer = options[_optionID].writer;
             uint256 callGain = options[_optionID].strikePrice > mervalIndex ? (options[_optionID].strikePrice-mervalIndex)*10 : 0;     
             if(options[_optionID].collateral>callGain){
-            payable(msg.sender).transfer(callGain);
-            payable(Writer).transfer(options[_optionID].collateral-callGain);}
+            //payable(msg.sender).transfer(callGain);-
+            //Recuperamos la guita del pool de compound  y  lo mandamos a ambos miembros
+            usdtToken.transfer(msg.sender, callGain);
+            usdtToken.transfer(Writer, options[_optionID].collateral-callGain);
+            }
             else{
                 payable(msg.sender).transfer(options[_optionID].collateral);
+                usdtToken.transfer(Writer, options[_optionID].collateral);
             }
 
         } else {
@@ -166,9 +177,12 @@ contract Merval {
 
             if(options[_optionID].collateral>putGain){
             payable(msg.sender).transfer(putGain);
-            payable(Writer).transfer(options[_optionID].collateral-putGain);}
+            usdtToken.transfer(msg.sender, putGain);
+            usdtToken.transfer(Writer, options[_optionID].collateral-putGain);
+
+            }
             else{
-                payable(msg.sender).transfer(options[_optionID].collateral);
+            usdtToken.transfer(Writer, options[_optionID].collateral);
             }
             
         }}}
