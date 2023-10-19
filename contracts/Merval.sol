@@ -3,8 +3,13 @@ pragma solidity ^0.8.9;
 
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
+
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+
 import "./Dates.sol" ;
+import "./Ownable.sol";
+
 //SON LOTES DE 10 ACCIONES
 
 
@@ -14,25 +19,37 @@ import "./Dates.sol" ;
 //Tenes todo en remix
  
 
-contract Merval {
+contract Merval is Ownable {
+    struct Stock {
+        uint stockID;
+        string stockName;
+        uint price;
+        uint priceLastUpdated;
+        string[] priceSources;
+    }
+
     struct Option {
-        string ticker;
+        string ticker;  //Whats this for?
+
         uint optionID;
-        address writer;
+        uint stockID;
+        address creator;
         address owner;
+        
         uint strikePrice;
         uint expiration;
         uint price;
         uint collateral;
+        
         bool isCall;
         bool isInTheMarket;
         bool isExercised;
     }
 
     struct User {
-        uint userID;
+        uint userID;  // Is this necessary?
         address userAddress;
-        uint[] Writtenoptions;
+        uint[] createdOptions;
         uint[] ownedOptions;
     }
 
@@ -46,142 +63,200 @@ contract Merval {
     );
 
     IERC20 public usdtToken;
+    cUSDT public cUsdtToken;
+    uint256 public OPTION_LIFETIME = 2592000;  // 1 MONTH IN SECONDS
+    BokkyPooBahsDateTimeLibraryEdited DatesLibrary = new BokkyPooBahsDateTimeLibraryEdited();
+
+    Stock[] public stocks;
 
     mapping(address => User) public users;
     uint256 public userCount;
   
     Option[] public options;
+    uint public listedOptionsCount = 0;
     uint public mervalIndex = 783; //Se remplaza por CHAINLINK
     
     uint usdtvalue = 10**18;
 
-    function removeByIndex(uint[] storage array, uint index) internal {
-        if (index >= array.length) return;
+    constructor(address _usdtToken, address _cUsdtToken) Ownable() {
+        usdtToken = IERC20(_usdtToken);
+        cUsdtToken = cUSDT(_cUsdtToken);
+    }
+
+    function removeByValue(uint[] storage array, uint value) internal {
+        uint index;
+        for (index = 0; index < array.length; index++){
+            if (array[index] == value) {
+                break;
+            }
+        }
 
         for (uint i = index; i < array.length-1; i++){
             array[i] = array[i+1];
         }
-        array.pop();
-    }
-    BokkyPooBahsDateTimeLibraryEdited DatesLibrary = new BokkyPooBahsDateTimeLibraryEdited();
 
-    uint timestamp;
-    function timeStampManager() public returns (uint)  {
-        uint _timestamp=block.timestamp;
-        if(_timestamp>timestamp+2592000){
-            timestamp=_timestamp+2592000;
+        if (index < array.length) {
+            array.pop();
         }
-        return timestamp;
+    }
+
+    function getStocks() public view returns (Stock[] memory) {
+        return stocks;
+    }
+
+    function getOptions() public view returns (Option[] memory) {
+        return options;
+    }
+
+    function getListedOptions() public view returns (Option[] memory) {
+        Option[] memory listedOptions = new Option[](listedOptionsCount);
+        uint listedOptionsindex = 0;
+        for (uint i = 0; i < options.length; i++) {
+            if (options[i].isInTheMArket) {
+                listedOptions[listedOptionsindex++] = options[i];
+            }
+        }
+        return listedOptions;
+    }
+
+    function getCreatedOptions() public view returns (Option[] memory) {
+        User storage user = users[msg.sender];
+        Option[] memory createdOptions = new Option[](user.createdOptions.length);
+        for (uint i = 0; user.createdOptions.length; i++) {
+            createdOptions[i] = options[user.createdOptions[i]];
+        }
+        return createdOptions;
+    }
+
+    function getOwnedOptions() public view returns (Option[] memory) {
+        User storage user = users[msg.sender];
+        Option[] memory ownedOptions = new Option[](user.ownedOptions.length);
+        for (uint i = 0; user.ownedOptions.length; i++) {
+            ownedOptions[i] = options[user.ownedOptions[i]];
+        }
+        return ownedOptions;
+    }
+
+    function addStock() public onlyOwner {
+
     }
 
     function createUser(address _address) public {
+        require(users[_address].userAddress == address(0x0), "This user already exists");
         User memory newUser = User(userCount, _address, new uint[](0), new uint[](0));
         users[_address] = newUser;
         userCount += 1;
     }
 
-    function ensureUserExists(address _address) internal {
-        if (users[_address].userAddress == address(0)) {
+    function getUserFromAddress(address _address) internal returns (User storage) {
+        if (users[_address].userAddress == address(0x0)) {
             createUser(_address);
         }
+        return users[_address];
     }
 
-    function getUserData(address _userID) public view returns (User memory) {
-        return( users[_userID]);
-    }
+    function createOption(uint stockID, uint _strikePrice, uint _price, bool _isCall) public {
+        require(stockID < stocks.length, "This stockID does not exist");
 
-    function createOption(uint _strikePrice, uint _price, bool _isCall) public  {
-        ensureUserExists(msg.sender);
-        uint collateral=((mervalIndex * 30)/2)*usdtvalue;
+        User storage user = getUserFromAddress(msg.sender);
+        uint collateral = ((mervalIndex * 30)/2) * usdtvalue;
 
-        require(usdtToken.balanceOf(msg.sender) >= collateral, "Insufficient USDT balance,You must collateralize 150%");
-        require(usdtToken.allowance(msg.sender, address(this)) >= collateral, "Approval not given,You must collateralize 150% ");
-        usdtToken.transferFrom(msg.sender, owner, priceInUSDT);
+        require(usdtToken.balanceOf(user.userAddress) >= collateral, "Insufficient USDT balance, you must collateralize 150%");
+        require(usdtToken.allowance(user.userAddress, address(this)) >= collateral, "Approval not given, you must collateralize 150%");
+        usdtToken.transferFrom(user.userAddress, address(this), priceInUSDT);  // Maybe directly to compound?
 
-        uint expiration=timeStampManager();
+        uint expirationTimestamp = block.timestamp + OPTION_LIFETIME;
         
-        string memory ticker=DatesLibrary.OptionFormat("MERV",expiration,true);
+        string memory ticker = DatesLibrary.OptionFormat("MERV", expiration, true);  //check this
 
-        Option memory newOption = Option(ticker,options.length,msg.sender, msg.sender, _strikePrice, expiration, _price, collateral, _isCall, true, false);
+        uint optionID = options.length;
+        Option memory newOption = Option(ticker, optionID, stockID, user.userAddress, user.userAddress, _strikePrice, expirationTimestamp, _price, collateral, _isCall, true, false);
 
-
-        users[msg.sender].Writtenoptions.push(options.length);
-        users[msg.sender].ownedOptions.push(options.length);
+        user.createdOptions.push(optionID);
+        user.ownedOptions.push(optionID);
         options.push(newOption);
+        listedOptionsCount += 1;
 
-        emit OptionCreated(msg.sender, _strikePrice, expiration, _price, collateral, _isCall);
+        emit OptionCreated(user.userAddress, _strikePrice, expiration, _price, collateral, _isCall);
         //SEND TO COMPUND
     }
 
-    function buyOption(uint _optionID) public payable {
-        ensureUserExists(msg.sender);
-        uint batchPrice=usdtvalue*options[_optionID].price*10;
-        require(usdtToken.balanceOf(msg.sender) >= batchPrice, "Insufficient USDT balance");
-        require(usdtToken.allowance(msg.sender, address(this)) >= batchPrice, "Approval not given");
-        require(options[_optionID].isInTheMarket == true, "This option is not in the market");
-        require(options[_optionID].isExercised == false, "This option is already exercised");
-        require(options[_optionID].writer != msg.sender, "You are the writer of this option");
-        address writer = options[_optionID].writer;
-
-
-        usdtToken.transferFrom(msg.sender, writer, batchPrice);
-        removeByIndex(users[writer].ownedOptions, _optionID);
-
-        options[_optionID].owner = msg.sender;
-        options[_optionID].isInTheMarket = false;
-        
-        
-
-        users[msg.sender].ownedOptions.push(_optionID);
-    }
-
     function sellOption(uint _optionID) public {
-        ensureUserExists(msg.sender);
+        Option storage option = options[_optionID];
+        require(option.owner == msg.sender, "You are not the owner of this option");
+        require(option.isInTheMarket == false, "This option is already in the market");
 
-        require(options[_optionID].owner == msg.sender, "You are not the owner of this option");
-        require(options[_optionID].isInTheMarket == false, "This option is already in the market");
-        options[_optionID].isInTheMarket = true;
+        option.isInTheMarket = true;
+        listedOptionsCount += 1;
     }
 
     function canceSellOrder(uint256 _optionID) public {
-        require(options[_optionID].writer == msg.sender, "You are not the writer of this option");
-        require(options[_optionID].isInTheMarket == true, "This option is not in the market");
-        require(options[_optionID].isExercised == false, "This option is already exercised");
-        options[_optionID].isInTheMarket = false;
+        Option storage option = options[_optionID];
+        require(option.owner == msg.sender, "You are not the owner of this option");
+        require(option.isInTheMarket == true, "This option is not in the market");
+        require(option.isExercised == false, "This option is already exercised");
+
+        option.isInTheMarket = false;
+        listedOptionsCount -= 1;
+    }
+
+    function buyOption(uint _optionID) public payable {
+        Option storage option = options[_optionID];
+        User storage user = getUserFromAddress(msg.sender);
+        User storage optionOwner = getUserFromAddress(option.owner);
+        require(option.isInTheMarket == true, "This option is not in the market");
+        require(option.isExercised == false, "This option is already exercised");
+        require(option.owner != user.userAddress, "You already own this option");
+
+        uint batchPrice=usdtvalue*option.price*10;  //Check this
+        require(usdtToken.balanceOf(user.userAddress) >= batchPrice, "Insufficient USDT balance");
+        require(usdtToken.allowance(user.userAddress, address(this)) >= batchPrice, "Approval not given");
+
+        usdtToken.transferFrom(user.userAddress, optionOwner.userAddress, batchPrice);
+        removeByValue(optionOwner.ownedOptions, option.optionID);
+
+        option.owner = user.userAddress;
+        option.isInTheMarket = false;
+
+        user.ownedOptions.push(option.optionID);
+        listedOptionsCount -= 1;
     }
 
     function exerciseOption(uint _optionID) public {
-        ensureUserExists(msg.sender);
-        require(options[_optionID].owner == msg.sender, "You are not the owner of this option");
-        require(options[_optionID].isExercised == false, "This option is already exercised");
-        require(block.timestamp <= options[_optionID].expiration, "This option is  expired ");
-        options[_optionID].isExercised = true;
-        removeByIndex(users[msg.sender].ownedOptions, _optionID);
-        removeByIndex(users[options[_optionID].writer].Writtenoptions, _optionID);
+        Option storage option = options[_optionID];
+        User storage user = getUserFromAddress(msg.sender);
+        User storage optionCreator = getUserFromAddress(option.creator);
 
-        if (options[_optionID].isCall == true) {
-            address Writer = options[_optionID].writer;
-            uint256 callGain = options[_optionID].strikePrice > mervalIndex ? (options[_optionID].strikePrice-mervalIndex)*10 : 0;     
-            if(options[_optionID].collateral>callGain) {
-                //payable(msg.sender).transfer(callGain);-
-                //Recuperamos la guita del pool de compound  y  lo mandamos a ambos miembros
-                usdtToken.transfer(msg.sender, callGain);
-                usdtToken.transfer(Writer, options[_optionID].collateral-callGain);
-            } else {
-                payable(msg.sender).transfer(options[_optionID].collateral);
-                usdtToken.transfer(Writer, options[_optionID].collateral);
-            }
+        require(option.owner == user.userAddress, "You are not the owner of this option");
+        require(option.isExercised == false, "This option is already exercised");
+        require(block.timestamp <= option.expiration, "This option is  expired");
+        option.isExercised = true;  // Prevents reentrancy
+
+        removeByValue(user.ownedOptions, option.optionID);
+        removeByValue(optionCreator.createdOptions, option.optionID);
+
+        //Recuperamos la guita del pool de compound  y  lo mandamos a ambos miembros
+
+        // check this
+        uint256 gain;
+        if (option.isCall) {
+            gain = option.strikePrice > mervalIndex ? (option.strikePrice-mervalIndex)*10 : 0;     
         } else {
-            uint256 putGain = options[_optionID].strikePrice < mervalIndex ? (mervalIndex-options[_optionID].strikePrice)*10 :0;
-            address Writer = options[_optionID].writer;
+            gain = option.strikePrice < mervalIndex ? (mervalIndex-option.strikePrice)*10 :0;
+        }
 
-            if(options[_optionID].collateral>putGain){
-                payable(msg.sender).transfer(putGain);
-                usdtToken.transfer(msg.sender, putGain);
-                usdtToken.transfer(Writer, options[_optionID].collateral-putGain);
-            } else {
-                usdtToken.transfer(Writer, options[_optionID].collateral);
-            }
+        if (option.collateral > gain) {
+            usdtToken.transfer(user.userAddress, callGain);
+            usdtToken.transfer(optionCreator.userAddress, option.collateral-callGain);
+        } else {
+            //payable(user.userAddress).transfer(option.collateral);
+            usdtToken.transfer(optionCreator.userAddress, option.collateral);
+        }
+        //----------
+
+        if (option.isInTheMarket) {
+            option.isInTheMarket = false;
+            listedOptionsCount -= 1;
         }
     }
 }
