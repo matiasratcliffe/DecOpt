@@ -8,7 +8,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 
 import "./Dates.sol" ;
-import "./Ownable.sol";
 
 //SON LOTES DE 10 ACCIONES
 
@@ -19,13 +18,15 @@ import "./Ownable.sol";
 //Tenes todo en remix
  
 
-contract Merval is Ownable {
+contract Merval is ChainlinkClient, ConfirmedOwner {
+    using Chainlink for Chainlink.Request;
+
     struct Stock {
         uint stockID;
         string stockName;
         uint price;
         uint priceLastUpdated;
-        string[] priceSources;
+        string priceSource;
     }
 
     struct Option {
@@ -62,10 +63,14 @@ contract Merval is Ownable {
         bool isCall
     );
 
-    IERC20 public usdtToken;
-    cUSDT public cUsdtToken;
+    IERC20 private usdtToken;
+    cUSDT private cUsdtToken;
+    BokkyPooBahsDateTimeLibraryEdited private DatesLibrary = new BokkyPooBahsDateTimeLibraryEdited();
+    bytes32 private chainLinkJobId;
+    uint256 private chainLinkFee;
+    mapping(bytes32 => uint256) private chainLinkRequestIDToOptionID;
+    
     uint256 public OPTION_LIFETIME = 2592000;  // 1 MONTH IN SECONDS
-    BokkyPooBahsDateTimeLibraryEdited DatesLibrary = new BokkyPooBahsDateTimeLibraryEdited();
 
     Stock[] public stocks;
 
@@ -78,9 +83,13 @@ contract Merval is Ownable {
     
     uint usdtvalue = 10**18;
 
-    constructor(address _usdtToken, address _cUsdtToken) Ownable() {
+    constructor(address _usdtToken, address _cUsdtToken, address _linkToken, address _oracle) ConfirmedOwner(msg.sender) {
+        setChainlinkToken(_linkToken);
+        setChainlinkOracle(_oracle);
         usdtToken = IERC20(_usdtToken);
         cUsdtToken = cUSDT(_cUsdtToken);
+        jobId = "ca98366cc7314957b8c012c72f05aeeb";
+        fee = (1 * LINK_DIVISIBILITY) / 10; // 0,1 * 10**18 (Varies by network and job)
     }
 
     function removeByValue(uint[] storage array, uint value) internal {
@@ -159,11 +168,13 @@ contract Merval is Ownable {
         require(stockID < stocks.length, "This stockID does not exist");
 
         User storage user = getUserFromAddress(msg.sender);
-        uint collateral = ((mervalIndex * 30)/2) * usdtvalue;
+        uint collateral = ((mervalIndex * 30)/2) * usdtvalue;  // Check this
 
         require(usdtToken.balanceOf(user.userAddress) >= collateral, "Insufficient USDT balance, you must collateralize 150%");
         require(usdtToken.allowance(user.userAddress, address(this)) >= collateral, "Approval not given, you must collateralize 150%");
-        usdtToken.transferFrom(user.userAddress, address(this), priceInUSDT);  // Maybe directly to compound?
+        usdtToken.transferFrom(user.userAddress, address(this), collateral); // priceInUSDT); what is this?
+        usdtToken.approve(address(cUsdtToken), collateral);
+        require(cUsdtToken.mint(collateral) == 0, "Compounding failed");
 
         uint expirationTimestamp = block.timestamp + OPTION_LIFETIME;
         
@@ -224,6 +235,7 @@ contract Merval is Ownable {
 
     function exerciseOption(uint _optionID) public {
         Option storage option = options[_optionID];
+        Stock storage stock = stocks[option.stockID];
         User storage user = getUserFromAddress(msg.sender);
         User storage optionCreator = getUserFromAddress(option.creator);
 
@@ -235,7 +247,27 @@ contract Merval is Ownable {
         removeByValue(user.ownedOptions, option.optionID);
         removeByValue(optionCreator.createdOptions, option.optionID);
 
-        //Recuperamos la guita del pool de compound  y  lo mandamos a ambos miembros
+        //Recuperamos la guita del pool de compound y actualizamos option.collateral o asumimos el riesgo nosotros?
+        // sasafldshflkdsjhflkdshfl
+
+        Chainlink.Request memory req = buildChainlinkRequest(
+            chainLinkJobId,
+            address(this),
+            this.fulfillExerciseOption.selector
+        );
+        req.add("get", stock.priceSource);
+        //req.add("path", "RAW,ETH,USD,VOLUME24HOUR"); // Chainlink nodes 1.0.0 and later support this format
+        //req.addInt("times", 10 ** 18);
+        chainLinkRequestIDToOptionID[sendChainlinkRequest(req, fee)] = option.optionID;
+    }
+
+    function fulfillExerciseOption(bytes32 _requestId, uint256 _priceData) public recordChainlinkFulfillment(_requestId) {
+        // update stock price
+        Option storage option = options[chainLinkRequestIDToOptionID[_requestId]];
+        User storage user = getUserFromAddress(option.owner);
+        Stock storage stock = stocks[option.stockID];
+        stock.price = _priceData;
+        stock.priceLastUpdated = block.timestamp;
 
         // check this
         uint256 gain;
@@ -244,15 +276,14 @@ contract Merval is Ownable {
         } else {
             gain = option.strikePrice < mervalIndex ? (mervalIndex-option.strikePrice)*10 :0;
         }
+        //----------
 
         if (option.collateral > gain) {
-            usdtToken.transfer(user.userAddress, callGain);
-            usdtToken.transfer(optionCreator.userAddress, option.collateral-callGain);
+            usdtToken.transfer(user.userAddress, gain);
+            usdtToken.transfer(optionCreator.userAddress, option.collateral-gain);
         } else {
-            //payable(user.userAddress).transfer(option.collateral);
             usdtToken.transfer(optionCreator.userAddress, option.collateral);
         }
-        //----------
 
         if (option.isInTheMarket) {
             option.isInTheMarket = false;
