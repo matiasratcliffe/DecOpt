@@ -27,6 +27,7 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
         uint price;
         uint priceLastUpdated;
         string priceSource;
+        string pricePath;
     }
 
     struct Option {
@@ -146,8 +147,15 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
         return ownedOptions;
     }
 
-    function addStock() public onlyOwner {
-
+    function addStock(uint stockID, string stockName, string priceSource, string pricePath) public onlyOwner {
+        stocks.push(Stock(
+            stockID,
+            stockName,
+            0,
+            block.timestamp,
+            priceSource,
+            pricePath
+        ));
     }
 
     function createUser(address _address) public {
@@ -256,8 +264,8 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
             this.fulfillExerciseOption.selector
         );
         req.add("get", stock.priceSource);
-        //req.add("path", "RAW,ETH,USD,VOLUME24HOUR"); // Chainlink nodes 1.0.0 and later support this format
-        //req.addInt("times", 10 ** 18);
+        req.add("path", stock.pricePath);
+        req.addInt("times", 10 ** 18);
         chainLinkRequestIDToOptionID[sendChainlinkRequest(req, fee)] = option.optionID;
     }
 
