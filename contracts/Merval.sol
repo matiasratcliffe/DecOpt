@@ -41,8 +41,9 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
         uint strikePrice;
         uint expiration;
         uint price;
+        uint compoundTokens;
         uint collateral;
-        
+
         bool isCall;
         bool isInTheMarket;
         bool isExercised;
@@ -182,14 +183,16 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
         require(usdtToken.allowance(user.userAddress, address(this)) >= collateral, "Approval not given, you must collateralize 150%");
         usdtToken.transferFrom(user.userAddress, address(this), collateral); // priceInUSDT); what is this?
         usdtToken.approve(address(cUsdtToken), collateral);
+        uint previousCompoundBalance = cUsdtToken.balanceOf(address(this));
         require(cUsdtToken.mint(collateral) == 0, "Compounding failed");
+        uint compundTokens = cUsdtToken.balanceOf(address(this)) - previousCompoundBalance;
 
         uint expirationTimestamp = block.timestamp + OPTION_LIFETIME;
         
         string memory ticker = DatesLibrary.OptionFormat("MERV", expiration, true);  //check this
 
         uint optionID = options.length;
-        Option memory newOption = Option(ticker, optionID, stockID, user.userAddress, user.userAddress, _strikePrice, expirationTimestamp, _price, collateral, _isCall, true, false);
+        Option memory newOption = Option(ticker, optionID, stockID, user.userAddress, user.userAddress, _strikePrice, expirationTimestamp, _price, compoundTokens, collateral, _isCall, true, false);
 
         user.createdOptions.push(optionID);
         user.ownedOptions.push(optionID);
@@ -249,14 +252,16 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
 
         require(option.owner == user.userAddress, "You are not the owner of this option");
         require(option.isExercised == false, "This option is already exercised");
-        require(block.timestamp <= option.expiration, "This option is  expired");
+        require(block.timestamp <= option.expiration, "This option is expired");  //revisar estoo
         option.isExercised = true;  // Prevents reentrancy
 
         removeByValue(user.ownedOptions, option.optionID);
         removeByValue(optionCreator.createdOptions, option.optionID);
 
-        //Recuperamos la guita del pool de compound y actualizamos option.collateral o asumimos el riesgo nosotros?
-        // sasafldshflkdsjhflkdshfl
+        // Recuperamos la guita del pool de compound y actualizamos option.collateral
+        uint previuosUsdtBalance = usdtToken.balanceOf(address(this));
+        cUsdtToken.redeem(option.compoundTokens);
+        option.collateral = usdtToken.balanceOf(address(this)) - previousUsdtBalance;
 
         Chainlink.Request memory req = buildChainlinkRequest(
             chainLinkJobId,
