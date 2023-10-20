@@ -6,6 +6,7 @@ import "hardhat/console.sol";
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import "@compound-finance/compound-protocol/contracts/CTokenInterfaces.sol";
 
 import "./Dates.sol" ;
 
@@ -18,7 +19,7 @@ import "./Dates.sol" ;
 //Tenes todo en remix
  
 
-contract Merval is ChainlinkClient, ConfirmedOwner {
+contract DecOpt is ChainlinkClient, ConfirmedOwner {
     using Chainlink for Chainlink.Request;
 
     struct Stock {
@@ -66,7 +67,7 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
     );
 
     IERC20 private usdtToken;
-    cUSDT private cUsdtToken;
+    CErc20Interface private cUsdtToken;
     BokkyPooBahsDateTimeLibraryEdited private DatesLibrary = new BokkyPooBahsDateTimeLibraryEdited();
     bytes32 private chainLinkJobId;
     uint256 private chainLinkFee;
@@ -89,7 +90,7 @@ contract Merval is ChainlinkClient, ConfirmedOwner {
         setChainlinkToken(_linkToken);
         setChainlinkOracle(_oracle);
         usdtToken = IERC20(_usdtToken);
-        cUsdtToken = cUSDT(_cUsdtToken);
+        cUsdtToken = CErc20Interface(_cUsdtToken);
         jobId = "ca98366cc7314957b8c012c72f05aeeb";
         fee = (1 * LINK_DIVISIBILITY) / 10; // 0,1 * 10**18 (Varies by network and job)
     }
