@@ -6,13 +6,19 @@ export default function Home() {
         <article className="article">
           <h2>Write option</h2>
           <form>
+            <label>Underlying asset:
+              <select name="underlyingAsset">
+                <option value="NIFTY">NIFTY</option>
+                <option value="BANKNIFTY">BANKNIFTY</option>
+              </select>
+            </label>
             <label>
                 StrikePrice:
               <input type="text" name="strikePrice" />
             </label>
             <label>
-                Lots:
-              <input type="text" name="lots" />
+                Batches:
+              <input type="text" name="Batchs" />
             </label>
             <label>
                 Premium:
@@ -20,7 +26,6 @@ export default function Home() {
             </label>
             <input type="submit" value="Submit" className="btn" />
           </form>
-          
         </article>
     </main>
   );

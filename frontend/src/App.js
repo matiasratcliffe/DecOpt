@@ -1,7 +1,5 @@
 import { ConnectWallet } from "@thirdweb-dev/react";
 //import "./styles/Home.css";
-
-
 import "./styles/VaporWave.css";
 export default function Home() {
   return (
