@@ -6,17 +6,10 @@ import "hardhat/console.sol";
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
-import "@compound-finance/compound-protocol/contracts/CTokenInterfaces.sol";
 
-import "./Dates.sol" ;
+import "./Dates.sol";
+import "./CTokenInterfaces.sol";
 
-//SON LOTES DE 10 ACCIONES
-
-
-//TODO
-//Manejar timestamp y ejercicio
-//TODO: Crear ticker, ejemplo GGALC271023
-//Tenes todo en remix
  
 
 contract DecOpt is ChainlinkClient, ConfirmedOwner {
@@ -29,6 +22,14 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         uint priceLastUpdated;
         string priceSource;
         string pricePath;
+    }
+
+    struct OptionCreationData {
+        uint stockID;
+        uint _strikePrice;
+        uint _price;
+        bool _isCall;
+        address creator;
     }
 
     struct Option {
@@ -58,12 +59,18 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
     }
 
     event OptionCreated(
-        address indexed Lanzador,
+        bytes32 chainlinkRequestID,
+        address indexed creator,
         uint strikePrice,
         uint expiration,
         uint price,
         uint collateral,
         bool isCall
+    );
+
+    event OptionCreationFailed(
+        bytes32 chainlinkRequestID,
+        address issuer
     );
 
     IERC20 private usdtToken;
@@ -72,8 +79,10 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
     bytes32 private chainLinkJobId;
     uint256 private chainLinkFee;
     mapping(bytes32 => uint256) private chainLinkRequestIDToOptionID;
+    mapping(bytes32 => OptionCreationData) private chainLinkRequestIDToOptionCreationData;
     
     uint256 public OPTION_LIFETIME = 2592000;  // 1 MONTH IN SECONDS
+    uint8 public BATCH_SIZE = 10;
 
     Stock[] public stocks;
 
@@ -82,17 +91,16 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
   
     Option[] public options;
     uint public listedOptionsCount = 0;
-    uint public mervalIndex = 783; //Se remplaza por CHAINLINK
     
-    uint usdtvalue = 10**18;
+    uint usdcDecimalsMultiplicator = 10**18;
 
-    constructor(address _usdtToken, address _cUsdtToken, address _linkToken, address _oracle) ConfirmedOwner(msg.sender) {
+    constructor(address _usdtToken, address _cUsdtToken, address _linkToken, address _oracle, string calldata _jobId) ConfirmedOwner(msg.sender) {
         setChainlinkToken(_linkToken);
         setChainlinkOracle(_oracle);
         usdtToken = IERC20(_usdtToken);
         cUsdtToken = CErc20Interface(_cUsdtToken);
-        jobId = "ca98366cc7314957b8c012c72f05aeeb";
-        fee = (1 * LINK_DIVISIBILITY) / 10; // 0,1 * 10**18 (Varies by network and job)
+        jobId = _jobId;
+        fee = (1 * (10**18)) / 10; // 0,1 * 10**18 (Varies by network and job)
     }
 
     function removeByValue(uint[] storage array, uint value) internal {
@@ -174,14 +182,38 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         return users[_address];
     }
 
-    function createOption(uint stockID, uint _strikePrice, uint _price, bool _isCall) public {
+    function createOption(uint stockID, uint _strikePrice, uint _price, bool _isCall) public returns (bytes32) {
         require(stockID < stocks.length, "This stockID does not exist");
-
         User storage user = getUserFromAddress(msg.sender);
-        uint collateral = ((mervalIndex * 30)/2) * usdtvalue;  // Check this
-
-        require(usdtToken.balanceOf(user.userAddress) >= collateral, "Insufficient USDT balance, you must collateralize 150%");
-        require(usdtToken.allowance(user.userAddress, address(this)) >= collateral, "Approval not given, you must collateralize 150%");
+        Chainlink.Request memory req = buildChainlinkRequest(
+            chainLinkJobId,
+            address(this),
+            this.fullfilCreateOption.selector
+        );
+        req.add("get", stock.priceSource);
+        req.add("path", stock.pricePath);
+        req.addInt("times", usdcDecimalsMultiplicator);
+        bytes32 _requestId = sendChainlinkRequest(req, fee);
+        chainLinkRequestIDToOptionCreationData[_requestId] = OptionCreationData(
+            stockID,
+            _strikePrice,
+            _price,
+            _isCall,
+            user.userAddress
+        );
+        return _requestId;
+    }
+    
+    function fullfilCreateOption(bytes32 _requestId, uint256 _priceData) public recordChainlinkFulfillment(_requestId) {
+        OptionCreationData storage data = chainLinkRequestIDToOptionCreationData[_requestId];
+        Stock storage stock = stocks[data.stockID];
+        User storage user = getUserFromAddress(data.creator);
+        uint collateral = (_priceData * usdtvalue * BATCH_SIZE * 3)/2;
+        
+        if (usdtToken.balanceOf(user.userAddress) < collateral || usdtToken.allowance(user.userAddress, address(this)) < collateral) {
+            emit OptionCreationFailed(_requestId, user.userAddress);
+            return;
+        }
         usdtToken.transferFrom(user.userAddress, address(this), collateral); // priceInUSDT); what is this?
         usdtToken.approve(address(cUsdtToken), collateral);
         uint previousCompoundBalance = cUsdtToken.balanceOf(address(this));
@@ -200,17 +232,32 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         options.push(newOption);
         listedOptionsCount += 1;
 
-        emit OptionCreated(user.userAddress, _strikePrice, expiration, _price, collateral, _isCall);
-        //SEND TO COMPUND
+        emit OptionCreated(_requestId, user.userAddress, _strikePrice, expiration, _price, collateral, _isCall);
     }
 
-    function sellOption(uint _optionID) public {
+    function sellOption(uint _optionID, uint newPrice) public {
         Option storage option = options[_optionID];
         require(option.owner == msg.sender, "You are not the owner of this option");
         require(option.isInTheMarket == false, "This option is already in the market");
 
+        option.price = newPrice;
         option.isInTheMarket = true;
         listedOptionsCount += 1;
+    }
+
+    function cancelOption(uint256 _optionID) public {
+        Option storage option = options[_optionID];
+        User storage optionCreator = getUserFromAddress(option.creator);
+        require(option.owner == msg.sender, "You are not the owner of this option");
+        require(option.creator == msg.sender, "You are not the creator of this option");
+        require(option.isInTheMarket == false, "This option is in the market");
+        require(option.isExercised == false, "This option is already exercised");
+        
+        option.isExercised = true;
+        uint previuosUsdtBalance = usdtToken.balanceOf(address(this));
+        cUsdtToken.redeem(option.compoundTokens);
+        option.collateral = usdtToken.balanceOf(address(this)) - previousUsdtBalance;
+        usdtToken.transfer(optionCreator.userAddress, option.collateral);
     }
 
     function canceSellOrder(uint256 _optionID) public {
@@ -245,7 +292,7 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         listedOptionsCount -= 1;
     }
 
-    function exerciseOption(uint _optionID) public {
+    function exerciseOption(uint _optionID) public returns (bytes32) {
         Option storage option = options[_optionID];
         Stock storage stock = stocks[option.stockID];
         User storage user = getUserFromAddress(msg.sender);
@@ -271,8 +318,10 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         );
         req.add("get", stock.priceSource);
         req.add("path", stock.pricePath);
-        req.addInt("times", 10 ** 18);
-        chainLinkRequestIDToOptionID[sendChainlinkRequest(req, fee)] = option.optionID;
+        req.addInt("times", usdcDecimalsMultiplicator);
+        bytes32 _requestId = sendChainlinkRequest(req, fee);
+        chainLinkRequestIDToOptionID[_requestId] = option.optionID;
+        return _requestId;
     }
 
     function fulfillExerciseOption(bytes32 _requestId, uint256 _priceData) public recordChainlinkFulfillment(_requestId) {
@@ -283,14 +332,12 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         stock.price = _priceData;
         stock.priceLastUpdated = block.timestamp;
 
-        // check this
         uint256 gain;
         if (option.isCall) {
-            gain = option.strikePrice > mervalIndex ? (option.strikePrice-mervalIndex)*10 : 0;     
+            gain = option.strikePrice > _priceData ? 0 : (option.strikePrice-_priceData)*BATCH_SIZE;
         } else {
-            gain = option.strikePrice < mervalIndex ? (mervalIndex-option.strikePrice)*10 :0;
+            gain = option.strikePrice < _priceData ? 0 : (_priceData-option.strikePrice)*BATCH_SIZE;
         }
-        //----------
 
         if (option.collateral > gain) {
             usdtToken.transfer(user.userAddress, gain);
