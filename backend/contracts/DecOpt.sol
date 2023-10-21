@@ -10,7 +10,6 @@ import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "./Dates.sol";
 import "./CTokenInterfaces.sol";
 
- 
 
 contract DecOpt is ChainlinkClient, ConfirmedOwner {
     using Chainlink for Chainlink.Request;
