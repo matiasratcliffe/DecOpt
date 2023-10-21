@@ -40,7 +40,7 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         address owner;
         
         uint strikePrice;
-        uint expiration;
+        uint expirationTimestamp;
         uint price;
         uint compoundTokens;
         uint collateral;
@@ -61,7 +61,7 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         bytes32 chainlinkRequestID,
         address indexed creator,
         uint strikePrice,
-        uint expiration,
+        uint expirationTimestamp,
         uint price,
         uint collateral,
         bool isCall
@@ -72,8 +72,8 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         address issuer
     );
 
-    IERC20 private usdtToken;
-    CErc20Interface private cUsdtToken;
+    IERC20 private usdcToken;
+    CErc20Interface private cUsdcToken;
     BokkyPooBahsDateTimeLibraryEdited private DatesLibrary = new BokkyPooBahsDateTimeLibraryEdited();
     bytes32 private chainLinkJobId;
     uint256 private chainLinkFee;
@@ -93,11 +93,19 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
     
     uint usdcDecimalsMultiplicator = 10**18;
 
-    constructor(address _usdtToken, address _cUsdtToken, address _linkToken, address _oracle, string calldata _jobId) ConfirmedOwner(msg.sender) {
+    /*
+        GOERLI:
+            usdc 0x07865c6e87b9f70255377e024ace6630c1eaa37f
+            cusdc 0x3EE77595A8459e93C2888b13aDB354017B198188
+            linkToken 0x326C977E6efc84E512bB9C30f76E30c160eD06FB
+            oracle 0xCC79157eb46F5624204f47AB42b3906cAA40eaB7
+            jobid ca98366cc7314957b8c012c72f05aeeb
+    */
+    constructor(address _usdcToken, address _cUsdcToken, address _linkToken, address _oracle, string calldata _jobId) ConfirmedOwner(msg.sender) {
         setChainlinkToken(_linkToken);
         setChainlinkOracle(_oracle);
-        usdtToken = IERC20(_usdtToken);
-        cUsdtToken = CErc20Interface(_cUsdtToken);
+        usdcToken = IERC20(_usdcToken);
+        cUsdcToken = CErc20Interface(_cUsdcToken);
         jobId = _jobId;
         fee = (1 * (10**18)) / 10; // 0,1 * 10**18 (Varies by network and job)
     }
@@ -207,21 +215,21 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         OptionCreationData storage data = chainLinkRequestIDToOptionCreationData[_requestId];
         Stock storage stock = stocks[data.stockID];
         User storage user = getUserFromAddress(data.creator);
-        uint collateral = (_priceData * usdtvalue * BATCH_SIZE * 3)/2;
+        uint collateral = (_priceData * usdcvalue * BATCH_SIZE * 3)/2;
         
-        if (usdtToken.balanceOf(user.userAddress) < collateral || usdtToken.allowance(user.userAddress, address(this)) < collateral) {
+        if (usdcToken.balanceOf(user.userAddress) < collateral || usdcToken.allowance(user.userAddress, address(this)) < collateral) {
             emit OptionCreationFailed(_requestId, user.userAddress);
             return;
         }
-        usdtToken.transferFrom(user.userAddress, address(this), collateral); // priceInUSDT); what is this?
-        usdtToken.approve(address(cUsdtToken), collateral);
-        uint previousCompoundBalance = cUsdtToken.balanceOf(address(this));
-        require(cUsdtToken.mint(collateral) == 0, "Compounding failed");
-        uint compundTokens = cUsdtToken.balanceOf(address(this)) - previousCompoundBalance;
+        usdcToken.transferFrom(user.userAddress, address(this), collateral);
+        usdcToken.approve(address(cUsdcToken), collateral);
+        uint previousCompoundBalance = cUsdcToken.balanceOf(address(this));
+        require(cUsdcToken.mint(collateral) == 0, "Compounding failed");
+        uint compundTokens = cUsdcToken.balanceOf(address(this)) - previousCompoundBalance;
 
         uint expirationTimestamp = block.timestamp + OPTION_LIFETIME;
         
-        string memory ticker = DatesLibrary.OptionFormat("MERV", expiration, true);  //check this
+        string memory ticker = DatesLibrary.OptionFormat("MERV", expirationTimestamp, true);  //check this
 
         uint optionID = options.length;
         Option memory newOption = Option(ticker, optionID, stockID, user.userAddress, user.userAddress, _strikePrice, expirationTimestamp, _price, compoundTokens, collateral, _isCall, true, false);
@@ -231,7 +239,7 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         options.push(newOption);
         listedOptionsCount += 1;
 
-        emit OptionCreated(_requestId, user.userAddress, _strikePrice, expiration, _price, collateral, _isCall);
+        emit OptionCreated(_requestId, user.userAddress, _strikePrice, expirationTimestamp, _price, collateral, _isCall);
     }
 
     function sellOption(uint _optionID, uint newPrice) public {
@@ -253,10 +261,10 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         require(option.isExercised == false, "This option is already exercised");
         
         option.isExercised = true;
-        uint previuosUsdtBalance = usdtToken.balanceOf(address(this));
-        cUsdtToken.redeem(option.compoundTokens);
-        option.collateral = usdtToken.balanceOf(address(this)) - previousUsdtBalance;
-        usdtToken.transfer(optionCreator.userAddress, option.collateral);
+        uint previuosUsdcBalance = usdcToken.balanceOf(address(this));
+        cUsdcToken.redeem(option.compoundTokens);
+        option.collateral = usdcToken.balanceOf(address(this)) - previousUsdcBalance;
+        usdcToken.transfer(optionCreator.userAddress, option.collateral);
     }
 
     function canceSellOrder(uint256 _optionID) public {
@@ -277,11 +285,11 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         require(option.isExercised == false, "This option is already exercised");
         require(option.owner != user.userAddress, "You already own this option");
 
-        uint batchPrice=usdtvalue*option.price*10;  //Check this
-        require(usdtToken.balanceOf(user.userAddress) >= batchPrice, "Insufficient USDT balance");
-        require(usdtToken.allowance(user.userAddress, address(this)) >= batchPrice, "Approval not given");
+        uint batchPrice=usdcvalue*option.price*10;  //Check this
+        require(usdcToken.balanceOf(user.userAddress) >= batchPrice, "Insufficient USDC balance");
+        require(usdcToken.allowance(user.userAddress, address(this)) >= batchPrice, "Approval not given");
 
-        usdtToken.transferFrom(user.userAddress, optionOwner.userAddress, batchPrice);
+        usdcToken.transferFrom(user.userAddress, optionOwner.userAddress, batchPrice);
         removeByValue(optionOwner.ownedOptions, option.optionID);
 
         option.owner = user.userAddress;
@@ -299,16 +307,16 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
 
         require(option.owner == user.userAddress, "You are not the owner of this option");
         require(option.isExercised == false, "This option is already exercised");
-        require(block.timestamp <= option.expiration, "This option is expired");  //revisar estoo
+        require(block.timestamp <= option.expirationTimestamp, "This option is expired");  //revisar estoo
         option.isExercised = true;  // Prevents reentrancy
 
         removeByValue(user.ownedOptions, option.optionID);
         removeByValue(optionCreator.createdOptions, option.optionID);
 
         // Recuperamos la guita del pool de compound y actualizamos option.collateral
-        uint previuosUsdtBalance = usdtToken.balanceOf(address(this));
-        cUsdtToken.redeem(option.compoundTokens);
-        option.collateral = usdtToken.balanceOf(address(this)) - previousUsdtBalance;
+        uint previuosUsdcBalance = usdcToken.balanceOf(address(this));
+        cUsdcToken.redeem(option.compoundTokens);
+        option.collateral = usdcToken.balanceOf(address(this)) - previousUsdcBalance;
 
         Chainlink.Request memory req = buildChainlinkRequest(
             chainLinkJobId,
@@ -339,15 +347,28 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         }
 
         if (option.collateral > gain) {
-            usdtToken.transfer(user.userAddress, gain);
-            usdtToken.transfer(optionCreator.userAddress, option.collateral-gain);
+            usdcToken.transfer(user.userAddress, gain);
+            usdcToken.transfer(optionCreator.userAddress, option.collateral-gain);
         } else {
-            usdtToken.transfer(optionCreator.userAddress, option.collateral);
+            usdcToken.transfer(optionCreator.userAddress, option.collateral);
         }
 
         if (option.isInTheMarket) {
             option.isInTheMarket = false;
             listedOptionsCount -= 1;
         }
+    }
+
+    function redeemUnexercisedExpiredOption(uint _optionID) {
+        Option storage option = options[_optionID];
+        require(option.isExercised == false, "This option has been exercised");
+        require(block.timestamp > option.expirationTimestamp, "This option has not expired yet");
+        require(option.creator == msg.sender, "You are not the creator of this option");
+
+        option.isExercised = true;
+        uint previuosUsdcBalance = usdcToken.balanceOf(address(this));
+        cUsdcToken.redeem(option.compoundTokens);
+        option.collateral = usdcToken.balanceOf(address(this)) - previousUsdcBalance;
+        usdcToken.transfer(option.creator, option.collateral);
     }
 }
