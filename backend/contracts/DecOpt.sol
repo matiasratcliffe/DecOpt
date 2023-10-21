@@ -59,12 +59,7 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
 
     event OptionCreated(
         bytes32 chainlinkRequestID,
-        address indexed creator,
-        uint strikePrice,
-        uint expirationTimestamp,
-        uint price,
-        uint collateral,
-        bool isCall
+        bool success
     );
 
     event OptionCreationFailed(
@@ -96,7 +91,7 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
     /*
         GOERLI:
             usdc 0x07865c6e87b9f70255377e024ace6630c1eaa37f
-            cusdc 0x3EE77595A8459e93C2888b13aDB354017B198188
+            cusdc 0x73506770799Eb04befb5AaE4734e58C2C624F493
             linkToken 0x326C977E6efc84E512bB9C30f76E30c160eD06FB
             oracle 0xCC79157eb46F5624204f47AB42b3906cAA40eaB7
             jobid ca98366cc7314957b8c012c72f05aeeb
