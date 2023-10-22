@@ -2,9 +2,8 @@
 import "./styles/VaporWave.css";
 import { useContractRead, useContract } from "@thirdweb-dev/react";
 import { useEffect, useState } from "react";
-require('dotenv').config();
+import { contractAddress } from "./data/contract";
 
-const contractAddress = process.env.GOERLI_CONTRACT_ADDRESS;
 
 export default function Home() {
   const { contract } = useContract(contractAddress);

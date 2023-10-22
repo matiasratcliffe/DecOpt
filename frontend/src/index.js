@@ -3,11 +3,8 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import reportWebVitals from "./reportWebVitals";
 import { ThirdwebProvider } from "@thirdweb-dev/react";
-import WriteOption from "./WriteOption";
 import WrittenOptions from "./WrittenOptions";
 import MyOptions from "./MyOptions";
-import MyComponent from "./MyComponent";
-
 
 import "./styles/VaporWave.css";
 import { useContractRead, useContract } from "@thirdweb-dev/react";
