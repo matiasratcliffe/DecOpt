@@ -4,7 +4,7 @@ import { useContractRead, useContract } from "@thirdweb-dev/react";
 import { ethers } from "ethers";
 import { useEffect, useState } from "react";
 
-const contractAddress = "0x232b57323b4179969DeeA3d85395041040CBF200";
+const contractAddress = "0x1f3413d43B40Ad50F1c580826D109F84b485c455";
 
 export default function Home() {
   const { contract } = useContract(contractAddress);
@@ -14,7 +14,7 @@ export default function Home() {
   useEffect(() => {
     if (!isLoading && data !== null) {
       let articles = [];
-      data.array.forEach(element => {
+      ([1,2]).forEach(element => {
         articles.push(
           <article>
             <h3>GFGC1517MA</h3>
@@ -29,11 +29,18 @@ export default function Home() {
     }
   }, [data, isLoading]);
 
+  async function funcion() {
+    console.log(contract);
+  }
+
   return (
     <main className="main">
         <article className="article">
           <h2>My options</h2>
-          {options}
+          {
+            options.length
+          }
+          <button onClick={funcion}>Boton</button>
         </article>
     </main>
   );
