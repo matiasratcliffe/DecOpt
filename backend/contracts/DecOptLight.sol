@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.9;
 
 // Uncomment this line to use console.log
 
@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 import "./Dates.sol";
-import "../Compound/contracts/CTokenInterfaces.sol";
+import "./compound/CTokenInterfaces.sol";
 
 struct Stock {
     uint stockID;
