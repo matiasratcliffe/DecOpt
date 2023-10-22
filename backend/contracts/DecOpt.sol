@@ -1,3 +1,4 @@
+/*
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
 
@@ -8,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 
 import "./Dates.sol";
-import "./CTokenInterfaces.sol";
+import "./compound/CTokenInterfaces.sol";
 
 
 contract DecOpt is ChainlinkClient, ConfirmedOwner {
@@ -88,14 +89,12 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
     
     uint usdcDecimalsMultiplicator = 10**18;
 
-    /*
-        GOERLI:
-            usdc 0x07865c6e87b9f70255377e024ace6630c1eaa37f
-            cusdc 0x73506770799Eb04befb5AaE4734e58C2C624F493
-            linkToken 0x326C977E6efc84E512bB9C30f76E30c160eD06FB
-            oracle 0xCC79157eb46F5624204f47AB42b3906cAA40eaB7
-            jobid ca98366cc7314957b8c012c72f05aeeb
-    */
+    //    GOERLI:
+    //        usdc 0x07865c6e87b9f70255377e024ace6630c1eaa37f
+    //        cusdc 0x73506770799Eb04befb5AaE4734e58C2C624F493
+    //        linkToken 0x326C977E6efc84E512bB9C30f76E30c160eD06FB
+    //        oracle 0xCC79157eb46F5624204f47AB42b3906cAA40eaB7
+    //        jobid ca98366cc7314957b8c012c72f05aeeb
     constructor(address _usdcToken, address _cUsdcToken, address _linkToken, address _oracle, string calldata _jobId) ConfirmedOwner(msg.sender) {
         setChainlinkToken(_linkToken);
         setChainlinkOracle(_oracle);
