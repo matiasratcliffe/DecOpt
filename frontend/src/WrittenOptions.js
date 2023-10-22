@@ -1,6 +1,31 @@
 //import "./styles/Home.css";
 import "./styles/VaporWave.css";
+import { useContractRead, useContract } from "@thirdweb-dev/react";
+import { useEffect, useState } from "react";
+require('dotenv').config();
+
+const contractAddress = process.env.GOERLI_CONTRACT_ADDRESS;
+
+
 export default function Home() {
+  const { contract } = useContract(contractAddress);
+  const { data, isLoading, error } = useContractRead(contract, "getStocks");
+  const [stocks, setStocks] = useState([]);
+  const [selectedStock, setSelectedStock] = useState();
+
+  useEffect(() => {
+    if (!isLoading && data !== null) {
+      let elements = [];
+      data.forEach(element => {
+        console.log(element);
+        elements.push(
+          <option value="NIFTY">NIFTY</option>
+        );
+      });
+      setOptions(articles);
+    }
+  }, [data, isLoading]);
+
   return (
     <main className="main">
         <article className="article">
@@ -8,8 +33,7 @@ export default function Home() {
           <form>
             <label>Underlying asset:
               <select name="underlyingAsset">
-                <option value="NIFTY">NIFTY</option>
-                <option value="BANKNIFTY">BANKNIFTY</option>
+                {stocks}
               </select>
             </label>
             <label>

@@ -23,9 +23,10 @@ const activeChain = "ethereum";
 //clientId="your-client-id"
 const container = document.getElementById("root");
 const root = createRoot(container);
+
 root.render(
   <React.StrictMode>
-    <ThirdwebProvider activeChain="goerli" clientId="227f0a60f32222e902fb533b0e2c9677">
+    <ThirdwebProvider activeChain="goerli">
       <App/>
       <WrittenOptions/>
       <MyOptions/>

@@ -150,7 +150,8 @@ contract DecOpt is ChainlinkClient, ConfirmedOwner {
         return ownedOptions;
     }
 
-    function addStock(uint stockID, string calldata stockName, string calldata priceSource, string calldata pricePath) public onlyOwner {
+    function addStock(string calldata stockName, string calldata priceSource, string calldata pricePath) public onlyOwner {
+        uint stockID = stocks.length;
         stocks.push(Stock(
             stockID,
             stockName,

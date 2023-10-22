@@ -1,10 +1,10 @@
 //import "./styles/Home.css";
 import "./styles/VaporWave.css";
 import { useContractRead, useContract } from "@thirdweb-dev/react";
-import { ethers } from "ethers";
 import { useEffect, useState } from "react";
+require('dotenv').config();
 
-const contractAddress = "0x1f3413d43B40Ad50F1c580826D109F84b485c455";
+const contractAddress = process.env.GOERLI_CONTRACT_ADDRESS;
 
 export default function Home() {
   const { contract } = useContract(contractAddress);
@@ -14,7 +14,8 @@ export default function Home() {
   useEffect(() => {
     if (!isLoading && data !== null) {
       let articles = [];
-      ([1,2]).forEach(element => {
+      data.forEach(element => {
+        console.log(element);
         articles.push(
           <article>
             <h3>GFGC1517MA</h3>
@@ -29,18 +30,11 @@ export default function Home() {
     }
   }, [data, isLoading]);
 
-  async function funcion() {
-    console.log(contract);
-  }
-
   return (
     <main className="main">
         <article className="article">
           <h2>My options</h2>
-          {
-            options.length
-          }
-          <button onClick={funcion}>Boton</button>
+          {options}
         </article>
     </main>
   );

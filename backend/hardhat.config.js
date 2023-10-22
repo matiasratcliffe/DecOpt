@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require('dotenv').config();
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -7,8 +8,12 @@ module.exports = {
     development: {
       url: "http://localhost:8545",
     },
+    goerli: {
+      url: 'https://goerli.rpc.thirdweb.com',
+      accounts: [process.env.GOERLI_PRIVATE_KEY],
+    },
     mainnet: {
-      url: "https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID",
+      url: "https://ethereum.rpc.thirdweb.com",
       contractAddresses: {
         usdtToken: "",
         cUsdtToken: "",
