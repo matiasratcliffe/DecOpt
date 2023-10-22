@@ -4,6 +4,7 @@ import { useContractRead, useContract } from "@thirdweb-dev/react";
 import { useEffect, useState } from "react";
 import { contractAddress, usdcAddress } from "./data/contract";
 import { ethers } from 'ethers';
+import USDCAPPROVE from "./USDCAPPROVE";
 
 
 export default function Home() {
@@ -43,10 +44,8 @@ export default function Home() {
 
   async function createOption() {
     console.log(uscdContract);
-    if (contract != null && uscdContract != null) {
-      let params = [contractAddress, ethers.utils.parseEther(selectedStockPrice) * 1.6];
-      await uscdContract.call("approve", params);
-      params = [
+    if (contract != null) {
+      let params = [
         selectedStock[0],
         ethers.utils.parseEther(document.getElementById("strikePrice").value),
         ethers.utils.parseEther(document.getElementById("fee").value),
@@ -77,7 +76,7 @@ export default function Home() {
           </label>
           <br/>
           <label>
-            Fee:
+          premium:
             <input type="text" name="fee" className="input.small-input" id="fee"/>
           </label>
           <br/>
@@ -86,6 +85,7 @@ export default function Home() {
             Call
           </label>
           <br/>
+          <USDCAPPROVE/>
           <button onClick={createOption}>Create Option</button>
         </article>
     </main>

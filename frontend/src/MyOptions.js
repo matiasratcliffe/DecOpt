@@ -7,34 +7,25 @@ import { contractAddress } from "./data/contract";
 
 export default function Home() {
   const { contract } = useContract(contractAddress);
-  const { data, isLoading, error } = useContractRead(contract, "getOwnedOptions");
-  const [options, setOptions] = useState([]);
+  const { data, isLoading, error } = useContractRead(contract, "getCreatedOptions");
+  const [parsedData, setParsedData] = useState("No Data");
 
   useEffect(() => {
     if (!isLoading && data !== null) {
-      let articles = [];
-      data.forEach(element => {
-        console.log(element);
-        articles.push(
-          <article>
-            <h3>GFGC1517MA</h3>
-            <p>strikePrice: 700</p>
-            <p>Batches: 1</p>
-            <p>premium: 100</p>
-            <p>signer:<b>0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E</b></p> 
-          </article>
-        );
-      });
-      setOptions(articles);
+      console.log(data)
+      setParsedData(data)
     }
-  }, [data, isLoading]);
+}, [data, isLoading]);
 
-  return (
-    <main className="main">
-        <article className="article">
-          <h2>My options</h2>
-          {options}
-        </article>
-    </main>
-  );
+return (
+  <article>
+    <h2>My Owned Options</h2>
+  <h3>APPLC200DE23</h3>
+  <p>strikePrice: 200</p>
+  <p>Batches: 1</p>
+  <p>premium: 5</p>
+  <p>signer:<b>0x999999cf1046e68e36E1aA2E0E07105eDDD1f08E</b></p> 
+  <small>[EXAMPLE: APPLE CALL 200 1 Batch december2023]</small>
+</article>
+);
 }
